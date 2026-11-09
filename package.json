@@ -1,0 +1,17 @@
+{
+  "name": "claritygate-kpi-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser-based KPI planning calculator",
+  "scripts": {
+    "start": "node tools/serve.cjs",
+    "test": "node --test tests/calculator.test.cjs",
+    "test:browser": "node tests/browser-smoke.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2"
+  }
+}

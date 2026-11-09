@@ -1,0 +1,22 @@
+# Local data and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.log
+.claude/
+.codex/
+.vscode/
+.idea/
+# Dependencies and generated artifacts
+node_modules/
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db
+# Calculator exports may contain private business inputs
+claritygate-metrics*.json
+claritygate-metrics*.csv

@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClarityGate — Metrics Calculator</title>
+  <meta name="description" content="A browser-based revenue and sales activity planner with scenario comparisons and a reverse KPI solver." />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+  <meta name="referrer" content="no-referrer" />
+  <link rel="icon" type="image/png" href="assets/claritygate-icon.png">
+  <link rel="stylesheet" href="metrics-calculator.css" />
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-icon"><img src="assets/claritygate-icon.png" alt="ClarityGate"></span>
+    <span class="brand-text">
+      <span class="brand-name">ClarityGate</span>
+      <span class="brand-sub">Metrics Calculator</span>
+    </span>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="planner"     data-tooltip="tab-planner">Planner</button>
+    <button class="tab"        data-tab="solver"      data-tooltip="tab-solver">Solver</button>
+    <button class="tab"        data-tab="experiments" data-tooltip="tab-experiments">Experiments</button>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="save-status" id="save-status" data-tooltip="save-status">
+    <span class="dot"></span>
+    <span id="save-status-text">Saved</span>
+  </div>
+
+  <div class="topbar-actions">
+    <button class="btn btn-sm" id="btn-import"      data-tooltip="action-import">Import</button>
+    <button class="btn btn-sm" id="btn-export-json" data-tooltip="action-export-json">Export JSON</button>
+    <button class="btn btn-sm" id="btn-export-csv"  data-tooltip="action-export-csv">CSV</button>
+    <button class="btn btn-sm btn-danger" id="btn-reset" data-tooltip="action-reset">Reset</button>
+    <input type="file" id="file-import" accept=".json,application/json" class="hidden-file" />
+  </div>
+</header>
+
+<!-- ============ STICKY KPI STRIP ============ -->
+<div class="kpi-strip" id="kpi-strip">
+  <div class="kpi-item headline">
+    <span class="lbl">Revenue gap</span>
+    <span class="val" id="kpi-gap">—</span>
+  </div>
+  <div class="kpi-item">
+    <span class="lbl">Clients / mo</span>
+    <span class="val" id="kpi-clients">—</span>
+  </div>
+  <div class="kpi-item">
+    <span class="lbl">Dials / mo</span>
+    <span class="val" id="kpi-dials">—</span>
+  </div>
+  <div class="kpi-item headline">
+    <span class="lbl">Daily dials</span>
+    <span class="val" id="kpi-daily">—</span>
+  </div>
+  <div class="kpi-item headline">
+    <span class="lbl">Hours / day</span>
+    <span class="val" id="kpi-hours">—</span>
+  </div>
+  <div class="kpi-item">
+    <span class="lbl">Revenue / dial</span>
+    <span class="val" id="kpi-rev-dial">—</span>
+  </div>
+  <span class="kpi-status" id="kpi-status">Feasible</span>
+</div>
+
+<div class="app-layout">
+
+  <!-- ============ LEFT SIDEBAR ============ -->
+  <aside class="sidebar">
+
+    <!-- Scenarios -->
+    <div class="sb-section">
+      <h3 class="sb-title">
+        <span>Scenarios</span>
+        <button class="btn btn-ghost btn-sm" id="btn-save-scenario" data-tooltip="save-scenario" title="Save working rates to active scenario">Save</button>
+      </h3>
+      <div class="scenarios" id="scenarios-list"></div>
+      <button class="add-scenario" id="btn-add-scenario">
+        <span>＋</span> New scenario
+      </button>
+    </div>
+
+    <!-- Reality check -->
+    <div class="sb-section">
+      <h3 class="sb-title">Reality check</h3>
+      <div class="reality" id="reality-panel">
+        <div class="reality-item">Set inputs to see insights.</div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="sb-section" id="nav-planner">
+      <h3 class="sb-title">Jump to</h3>
+      <nav class="sb-nav">
+        <a href="#card-revenue"><span class="num">1</span>Revenue</a>
+        <a href="#card-offer"><span class="num">2</span>Offer &amp; pricing</a>
+        <a href="#card-activity"><span class="num">3</span>Activity &amp; capacity</a>
+        <a href="#card-detailed-funnel"><span class="num">4</span>Cold-call funnel</a>
+        <a href="#card-funnel-viz"><span class="num">5</span>Funnel diagram</a>
+        <a href="#card-scenarios"><span class="num">6</span>Compare scenarios</a>
+      </nav>
+    </div>
+
+    <div class="sb-section hidden" id="nav-solver">
+      <h3 class="sb-title">Solver</h3>
+      <nav class="sb-nav">
+        <a href="#solver-mode"><span class="num">1</span>Pick a question</a>
+        <a href="#solver-inputs"><span class="num">2</span>Inputs</a>
+        <a href="#solver-result"><span class="num">3</span>Result</a>
+      </nav>
+    </div>
+
+    <div class="sb-section hidden" id="nav-experiments">
+      <h3 class="sb-title">Experiments</h3>
+      <nav class="sb-nav">
+        <a href="#card-experiments"><span class="num">1</span>Lab notebook</a>
+        <a href="#card-metric-guide"><span class="num">2</span>Metric guide</a>
+      </nav>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN COLUMN ============ -->
+  <main class="main-col">
+
+    <!-- ============================================== -->
+    <!-- TAB: PLANNER                                   -->
+    <!-- ============================================== -->
+    <div class="tabpanel active" id="tab-planner">
+
+      <!-- 1. Revenue Goal -->
+      <section class="card input-card" id="card-revenue">
+        <div class="card-header">
+          <h2 class="card-title"><span class="section-num">1</span>Revenue Goal &amp; Gap</h2>
+          <div class="toggle-group" id="goal-mode" role="tablist">
+            <button data-mode="A" class="active" data-tooltip="mode-A">A — New / mo</button>
+            <button data-mode="B" data-tooltip="mode-B">B — Repeat orders</button>
+            <button data-mode="C" data-tooltip="mode-C">C — Retainer</button>
+          </div>
+        </div>
+        <p class="card-desc">Set your target. All required activity is back-calculated from this number.</p>
+
+        <div class="grid">
+          <div class="input-row" data-input="revenue.targetMonthly">
+            <div class="label">Target monthly revenue <span class="linked-icon" title="Linked to annual">⇄</span>
+              <button type="button" class="info" data-tooltip="targetMonthly">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="100000" step="500" />
+              <input type="number" min="0" step="100" />
+              <span class="unit">£</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="revenue.targetAnnual">
+            <div class="label">Target annual revenue <span class="linked-icon" title="Linked to monthly">⇄</span>
+              <button type="button" class="info" data-tooltip="targetAnnual">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="1200000" step="5000" />
+              <input type="number" min="0" step="1000" />
+              <span class="unit">£</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="revenue.currentMonthly">
+            <div class="label">Current monthly revenue
+              <button type="button" class="info" data-tooltip="currentMonthly">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="100000" step="250" />
+              <input type="number" min="0" step="100" />
+              <span class="unit">£</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="revenue.timeframeMonths">
+            <div class="label">Timeframe to goal
+              <button type="button" class="info" data-tooltip="timeframeMonths">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="36" step="1" />
+              <input type="number" min="1" max="60" step="1" />
+              <span class="unit">months</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="outputs">
+          <div class="outputs-label">Calculated</div>
+          <div class="output-grid">
+            <div class="output highlight">
+              <span class="label">Revenue gap / month</span>
+              <span class="value" id="out-gap">—</span>
+              <span class="sub">target − current</span>
+            </div>
+            <div class="output">
+              <span class="label">Annual at target</span>
+              <span class="value" id="out-annual">—</span>
+              <span class="sub">monthly × 12</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Offer Economics -->
+      <section class="card input-card" id="card-offer">
+        <div class="card-header"><h2 class="card-title"><span class="section-num">2</span>Offer &amp; Pricing</h2></div>
+        <p class="card-desc">AOV is your biggest lever. Try the quick presets to see sensitivity.</p>
+
+        <div class="grid">
+          <div class="input-row" data-input="offer.aov">
+            <div class="label">Average client / project value
+              <button type="button" class="info" data-tooltip="aov">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="500" max="50000" step="250" />
+              <input type="number" min="0" step="100" />
+              <span class="unit">£</span>
+            </div>
+            <div class="price-quick" id="aov-presets">
+              <button data-val="1000">£1k</button>
+              <button data-val="2000">£2k</button>
+              <button data-val="3000">£3k</button>
+              <button data-val="5000">£5k</button>
+              <button data-val="10000">£10k</button>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="offer.avgRepeatOrders" id="repeat-orders-row">
+            <div class="label">Avg repeat orders / client
+              <button type="button" class="info" data-tooltip="avgRepeatOrders">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="10" step="0.1" />
+              <input type="number" min="1" max="20" step="0.1" />
+              <span class="unit">×</span>
+            </div>
+            <div class="help">Mode B only — lifetime revenue = AOV × this.</div>
+          </div>
+
+          <div class="input-row" data-input="offer.setupFee">
+            <div class="label">One-off setup fee
+              <button type="button" class="info" data-tooltip="setupFee">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="20000" step="100" />
+              <input type="number" min="0" step="100" />
+              <span class="unit">£</span>
+            </div>
+          </div>
+
+          <div class="input-row mode-c collapsed" data-input="offer.mrrPerClient">
+            <div class="label">MRR per client
+              <button type="button" class="info" data-tooltip="mrrPerClient">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="20000" step="100" />
+              <input type="number" min="0" step="50" />
+              <span class="unit">£/mo</span>
+            </div>
+          </div>
+
+          <div class="input-row mode-c collapsed" data-input="offer.monthlyChurn">
+            <div class="label">Monthly churn <span class="linked-icon" title="Linked to retention">⇄</span>
+              <button type="button" class="info" data-tooltip="monthlyChurn">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="20" step="0.5" />
+              <input type="number" min="0" max="100" step="0.1" />
+              <span class="unit">%</span>
+            </div>
+          </div>
+
+          <div class="input-row mode-c collapsed" data-input="offer.retentionMonths">
+            <div class="label">Expected retention <span class="linked-icon" title="Linked to churn">⇄</span>
+              <button type="button" class="info" data-tooltip="retentionMonths">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="60" step="1" />
+              <input type="number" min="1" max="120" step="1" />
+              <span class="unit">months</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="outputs">
+          <div class="outputs-label">Calculated</div>
+          <div class="output-grid">
+            <div class="output highlight">
+              <span class="label">New clients required / mo</span>
+              <span class="value" id="out-clients-per-month">—</span>
+              <span class="sub" id="out-clients-mode-note">Mode A</span>
+            </div>
+            <div class="output">
+              <span class="label">Effective revenue / client</span>
+              <span class="value" id="out-effective-rev">—</span>
+              <span class="sub" id="out-effective-rev-note">AOV + setup</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Activity & Capacity -->
+      <section class="card input-card" id="card-activity">
+        <div class="card-header"><h2 class="card-title"><span class="section-num">3</span>Activity &amp; Capacity</h2></div>
+        <p class="card-desc">Translate monthly volume into a working schedule. Capacity inputs feed the reality check.</p>
+
+        <div class="grid">
+          <div class="input-row" data-input="activity.workingDays">
+            <div class="label">Working days / month
+              <button type="button" class="info" data-tooltip="workingDays">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="5" max="26" step="1" />
+              <input type="number" min="1" max="31" step="1" />
+              <span class="unit">days</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="activity.callsPerHour">
+            <div class="label">Dials per productive hour <span class="linked-icon" title="Links max hours ↔ max dials">⇄</span>
+              <button type="button" class="info" data-tooltip="callsPerHour">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="5" max="80" step="1" />
+              <input type="number" min="1" max="200" step="1" />
+              <span class="unit">/hr</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="activity.safetyMultiplier">
+            <div class="label">Safety multiplier
+              <button type="button" class="info" data-tooltip="safetyMultiplier">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="3" step="0.1" />
+              <input type="number" min="1" max="5" step="0.05" />
+              <span class="unit">×</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="capacity.maxDialsPerDay">
+            <div class="label">Max dials / day you can sustain <span class="linked-icon" title="Linked to max hours via dials/hour">⇄</span>
+              <button type="button" class="info" data-tooltip="capMaxDials">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="20" max="300" step="5" />
+              <input type="number" min="0" max="500" step="5" />
+              <span class="unit">dials</span>
+            </div>
+          </div>
+
+          <div class="input-row" data-input="capacity.maxHoursPerDay">
+            <div class="label">Max productive hours / day <span class="linked-icon" title="Linked to max dials via dials/hour">⇄</span>
+              <button type="button" class="info" data-tooltip="capMaxHours">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0.5" max="10" step="0.5" />
+              <input type="number" min="0" max="16" step="0.25" />
+              <span class="unit">hrs</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="outputs">
+          <div class="outputs-label">Calculated daily plan</div>
+          <div class="output-grid">
+            <div class="output highlight"><span class="label">Daily dials</span><span class="value" id="out-daily">—</span><span class="sub">dials ÷ days</span></div>
+            <div class="output"><span class="label">Weekly dials</span><span class="value" id="out-weekly">—</span><span class="sub">daily × 5</span></div>
+            <div class="output"><span class="label">Monthly dials</span><span class="value" id="out-monthly">—</span><span class="sub">with safety</span></div>
+            <div class="output highlight"><span class="label">Productive hours / day</span><span class="value" id="out-hours">—</span><span class="sub">daily ÷ /hr</span></div>
+          </div>
+        </div>
+        <div id="activity-warnings"></div>
+      </section>
+
+      <!-- 4. Cold-Call Funnel (gatekeeper model) -->
+      <section class="card input-card" id="card-detailed-funnel">
+        <div class="card-header"><h2 class="card-title"><span class="section-num">4</span>Cold-Call Funnel (Gatekeeper Model)</h2></div>
+        <p class="card-desc">The single source of truth: the full 8-stage cold-call chain with a gatekeeper branch. These rates drive the top bar, daily plan, diagram and scenarios. The headline always solves <em>reverse</em> from your revenue target; the direction toggle below changes only this card's projection and the §5 diagram.</p>
+
+        <div class="row-flex" style="margin-bottom:var(--space-3); gap:10px; flex-wrap:wrap;">
+          <span class="muted" style="font-size:11.5px">Direction
+            <button type="button" class="info" data-tooltip="df-direction">i</button>
+          </span>
+          <div class="toggle-group" id="df-direction">
+            <button data-direction="reverse" class="active">Reverse — from target</button>
+            <button data-direction="forward">Forward — from dials</button>
+          </div>
+        </div>
+
+        <div class="input-row" id="df-forward-row" data-input="funnel.forwardDials" style="display:none">
+          <div class="label">Dials / month
+            <button type="button" class="info" data-tooltip="dForwardDials">i</button>
+          </div>
+          <div class="controls">
+            <input type="range" min="0" max="10000" step="50" />
+            <input type="number" min="0" step="50" />
+            <span class="unit">dials</span>
+          </div>
+          <div class="help">Forward mode: projects clients &amp; revenue from this volume.</div>
+        </div>
+
+        <div class="grid">
+          <div class="input-row" data-input="funnel.pur">
+            <div class="label">PUR — Pick-up rate
+              <button type="button" class="info" data-tooltip="dPur">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Dials → human pick-ups.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.gr">
+            <div class="label">GR — Gatekeeper rate
+              <button type="button" class="info" data-tooltip="dGr">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Pick-ups landing on a gatekeeper. Rest go direct.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.gbr">
+            <div class="label">GBR — Gatekeeper bypass rate
+              <button type="button" class="info" data-tooltip="dGbr">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Gatekeeper interactions you get past.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.qr">
+            <div class="label">QR — Qualification rate
+              <button type="button" class="info" data-tooltip="dQr">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Stakeholders who are genuinely qualified.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.abr">
+            <div class="label">ABR — Appointment booking rate
+              <button type="button" class="info" data-tooltip="dAbr">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Qualified → booked appointment.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.sur">
+            <div class="label">SUR — Show-up rate
+              <button type="button" class="info" data-tooltip="dSur">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Appointments that attend.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.gfr">
+            <div class="label">GFR — Gone-forward / pitch rate
+              <button type="button" class="info" data-tooltip="dGfr">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Sales calls advancing to a pitch.</div>
+          </div>
+
+          <div class="input-row" data-input="funnel.scr">
+            <div class="label">SCR — Sale close rate
+              <button type="button" class="info" data-tooltip="dScr">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="1" max="100" step="1" />
+              <input type="number" min="0" max="100" step="0.5" />
+              <span class="unit">%</span>
+            </div>
+            <div class="help">Pitches that become clients.</div>
+          </div>
+        </div>
+
+        <div class="outputs">
+          <div class="outputs-label">Funnel projection</div>
+          <div class="output-grid">
+            <div class="output highlight" id="out-df-dials-wrap"><span class="label">Dials / mo required</span><span class="value" id="out-df-dials">—</span><span class="sub">reverse from clients</span></div>
+            <div class="output" id="out-df-clients-wrap"><span class="label">Clients / mo</span><span class="value" id="out-df-clients">—</span><span class="sub">end of funnel</span></div>
+            <div class="output" id="out-df-revenue-wrap"><span class="label">Projected revenue / mo</span><span class="value" id="out-df-revenue">—</span><span class="sub">clients × (AOV + setup)</span></div>
+            <div class="output"><span class="label">Stakeholders reached</span><span class="value" id="out-df-stake">—</span><span class="sub">direct + via gatekeeper</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Visual Funnel -->
+      <section class="card output-card" id="card-funnel-viz">
+        <div class="card-header"><h2 class="card-title"><span class="section-num">5</span>Funnel Diagram</h2></div>
+        <p class="card-desc">Gatekeeper-branch flow. Pick-ups split into gatekeeper and direct paths, then converge. The <strong>bottleneck</strong> stage (steepest drop) is flagged.</p>
+        <div class="funnel" id="funnel-viz"></div>
+      </section>
+
+      <!-- 6. Scenario Comparison -->
+      <section class="card output-card" id="card-scenarios">
+        <div class="card-header">
+          <h2 class="card-title"><span class="section-num">6</span>Scenario Comparison</h2>
+          <span class="muted" style="font-size:12px">Highlighted column = active scenario</span>
+        </div>
+        <p class="card-desc">Same revenue goal under each scenario's funnel rates. Diff colour = easier (green), similar (neutral), harder (red) than active.</p>
+        <div id="scenario-comparison"></div>
+      </section>
+
+      <div class="footer-note">
+        ClarityGate KPI Calculator · Inputs auto-save to this browser
+      </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- TAB: SOLVER                                    -->
+    <!-- ============================================== -->
+    <div class="tabpanel" id="tab-solver">
+
+      <section class="card input-card" id="solver-mode">
+        <div class="card-header"><h2 class="card-title"><span class="section-num">1</span>Solve For</h2></div>
+        <p class="card-desc">Reverse-engineer in the other direction: given a constraint, what does the missing KPI need to be?</p>
+
+        <div class="toggle-group" id="solver-mode-switch" style="margin-bottom:8px">
+          <button data-solve="aov"      class="active" data-tooltip="solve-aov">What AOV do I need?</button>
+          <button data-solve="maxRev"   data-tooltip="solve-maxRev">What's my ceiling?</button>
+          <button data-solve="gk"       data-tooltip="solve-gk">Solve a gatekeeper rate</button>
+        </div>
+        <div class="formula-note" id="solver-formula">—</div>
+      </section>
+
+      <section class="card input-card" id="solver-inputs">
+        <h2 class="card-title" style="margin-bottom:var(--space-3)">Inputs</h2>
+        <p class="card-desc" id="solver-input-desc">Constraint and knowns for the selected question.</p>
+
+        <div class="grid" id="solver-input-grid">
+          <div class="input-row solver-input" data-solve-modes="gk" data-no-input>
+            <div class="label">Rate to solve for
+              <button type="button" class="info" data-tooltip="gkSolveFor">i</button>
+            </div>
+            <div class="controls">
+              <select id="solver-gk-select" style="flex:1">
+                <option value="pur">PUR — Pick-up rate</option>
+                <option value="gr">GR — Gatekeeper rate</option>
+                <option value="gbr">GBR — Gatekeeper bypass rate</option>
+                <option value="qr">QR — Qualification rate</option>
+                <option value="abr">ABR — Appointment booking rate</option>
+                <option value="sur">SUR — Show-up rate</option>
+                <option value="gfr">GFR — Gone-forward / pitch rate</option>
+                <option value="scr" selected>SCR — Sale close rate</option>
+              </select>
+            </div>
+            <div class="help">The other seven rates are read from the § 4 funnel.</div>
+          </div>
+
+          <div class="input-row solver-input" data-solve-modes="aov maxRev gk" data-input="solver.target">
+            <div class="label">Target monthly revenue
+              <button type="button" class="info" data-tooltip="solveTarget">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0" max="100000" step="500"/>
+              <input type="number" min="0" step="100"/><span class="unit">£</span>
+            </div>
+          </div>
+
+          <div class="input-row solver-input" data-solve-modes="maxRev gk" data-input="solver.aov">
+            <div class="label">AOV (assumed)
+              <button type="button" class="info" data-tooltip="solveAov">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="500" max="50000" step="250"/>
+              <input type="number" min="0" step="100"/><span class="unit">£</span>
+            </div>
+          </div>
+
+          <div class="input-row solver-input" data-solve-modes="aov gk" data-input="solver.dailyDials">
+            <div class="label">Daily dials available
+              <button type="button" class="info" data-tooltip="solveDaily">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="5" max="300" step="5"/>
+              <input type="number" min="0" max="500" step="1"/><span class="unit">dials</span>
+            </div>
+          </div>
+
+          <div class="input-row solver-input" data-solve-modes="maxRev" data-input="solver.hoursPerDay">
+            <div class="label">Productive hours / day
+              <button type="button" class="info" data-tooltip="solveHours">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="0.5" max="10" step="0.25"/>
+              <input type="number" min="0" max="16" step="0.25"/><span class="unit">hrs</span>
+            </div>
+          </div>
+
+          <div class="input-row solver-input" data-solve-modes="maxRev" data-input="solver.callsPerHour">
+            <div class="label">Dials per hour
+              <button type="button" class="info" data-tooltip="callsPerHour">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="5" max="80" step="1"/>
+              <input type="number" min="1" max="200" step="1"/><span class="unit">/hr</span>
+            </div>
+          </div>
+
+          <div class="input-row solver-input" data-solve-modes="aov maxRev gk" data-input="solver.workingDays">
+            <div class="label">Working days / month
+              <button type="button" class="info" data-tooltip="workingDays">i</button>
+            </div>
+            <div class="controls">
+              <input type="range" min="5" max="26" step="1"/>
+              <input type="number" min="1" max="31" step="1"/><span class="unit">days</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="solver-result" id="solver-result">
+          <span class="lbl" id="solver-result-label">Required value</span>
+          <div class="val" id="solver-result-value">—</div>
+          <div class="interpretation" id="solver-result-interp">Set inputs to compute.</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- TAB: EXPERIMENTS                               -->
+    <!-- ============================================== -->
+    <div class="tabpanel" id="tab-experiments">
+
+      <section class="card input-card" id="card-experiments">
+        <div class="card-header">
+          <h2 class="card-title"><span class="section-num">1</span>Lab Notebook</h2>
+          <button class="btn btn-primary btn-sm" id="btn-add-experiment">＋ New experiment</button>
+        </div>
+        <p class="card-desc">Track tests. Change one variable, hold constants, write the hypothesis, decide based on result.</p>
+
+        <div class="experiments" id="experiments-list"></div>
+      </section>
+
+      <section class="card info-card" id="card-metric-guide">
+        <div class="card-header"><h2 class="card-title"><span class="section-num">2</span>Funnel Metric Guide</h2></div>
+        <p class="card-desc">Definitions used by this calculator. Check the denominator before comparing rates. Bundled inputs are examples, not industry benchmarks.</p>
+        <div class="benchmarks-list" id="metric-guide"></div>
+      </section>
+    </div>
+
+  </main>
+</div>
+
+<!-- Tooltip portal -->
+<div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+
+<!-- Generic modal -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" id="modal">
+    <h3 id="modal-title">Title</h3>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="modal-confirm">OK</button>
+    </div>
+  </div>
+</div>
+
+<script src="metric-guide.js"></script>
+<script src="metrics-calculator.js"></script>
+</body>
+</html>

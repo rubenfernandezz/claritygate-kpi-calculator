@@ -1,0 +1,71 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
+const root=path.resolve(__dirname,'..');
+const { createAppServer }=require(path.join(root,'tools/serve.cjs'));
+(async()=>{
+ const server=createAppServer();
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const base='http://127.0.0.1:'+server.address().port;
+ const browser=await chromium.launch({channel:process.env.BROWSER_CHANNEL || undefined,headless:true});
+ const context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});
+ await context.route('**/*', route => route.request().url().startsWith(base) ? route.continue() : route.abort());
+ const page=await context.newPage(); const errors=[]; const requests=[]; const checks=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ page.on('request',r=>requests.push(r.url()));
+ page.on('dialog',d=>d.accept());
+ const pass=name=>{checks.push(name);console.log('PASS '+name);};
+ const input=async(key,value)=>{await page.locator('[data-input="'+key+'"] input[type=number]').fill(String(value));await page.waitForTimeout(100);};
+ try {
+  await page.goto(base); await page.waitForTimeout(500);
+  assert.equal(await page.locator('#kpi-clients').innerText(),'5.00');
+  assert.equal(await page.locator('#kpi-dials').innerText(),'2,381'); pass('default planner');
+  await input('offer.setupFee',500); assert.equal(await page.locator('#kpi-clients').innerText(),'4.00');
+  await input('revenue.targetMonthly',5000); assert.equal(await page.locator('[data-input="revenue.targetAnnual"] input[type=number]').inputValue(),'60000');pass('setup fee and linked annual revenue');
+  await page.waitForTimeout(500);await page.reload();assert.equal(await page.locator('#kpi-clients').innerText(),'2.00');pass('autosave survives reload');
+  await page.locator('#btn-reset').click();
+  await page.locator('[data-direction="forward"]').click();await input('funnel.forwardDials',1000);
+  assert.equal(await page.locator('#out-df-clients').innerText(),'2.10');assert.equal(await page.locator('#kpi-clients').innerText(),'5.00');pass('forward projection preserves headline target');
+  await page.locator('[data-mode="B"]').click();await input('offer.avgRepeatOrders',2);assert.equal(await page.locator('#kpi-clients').innerText(),'2.50');
+  await page.locator('[data-mode="C"]').click();await input('offer.mrrPerClient',1000);assert.equal(await page.locator('#out-df-revenue').innerText(),'£2,100');pass('repeat and retainer modes');
+  await page.locator('#btn-reset').click();
+  await page.locator('[data-tab="solver"]').click();assert.match(await page.locator('#solver-result-value').innerText(),/3,608/);
+  await page.locator('[data-solve="maxRev"]').click();assert.equal(await page.locator('#solver-result-value').innerText(),'£5,544');
+  await page.locator('[data-solve="gk"]').click();assert.match(await page.locator('#solver-result-value').innerText(),/36\.08/);pass('all three solver modes');
+  await page.locator('[data-tab="planner"]').click();await page.locator('#btn-add-scenario').click();assert.equal(await page.locator('.scenario-row').count(),4);
+  await page.locator('.scenario-row.active .sc-menu').click();await page.locator('.sc-dropdown.visible [data-sc-action="rename"]').click();
+  await page.locator('#modal-input-name').fill('Portfolio test');await page.locator('#modal-confirm').click();assert.match(await page.locator('.scenario-row.active').innerText(),/Portfolio test/);
+  await page.locator('.scenario-row.active .sc-menu').click();await page.locator('.sc-dropdown.visible [data-sc-action="duplicate"]').click();assert.equal(await page.locator('.scenario-row').count(),5);
+  await page.locator('.scenario-row.active .sc-menu').click();await page.locator('.sc-dropdown.visible [data-sc-action="delete"]').click();assert.equal(await page.locator('.scenario-row').count(),4);pass('scenario create, rename, duplicate, delete');
+  await page.locator('[data-tab="experiments"]').click();assert.equal(await page.locator('.metric-reference').count(),9);assert.equal(await page.locator('#metric-guide a').count(),0);assert.match(await page.locator('#metric-guide').innerText(),/Booked appointments ÷ qualified stakeholders/);
+  await page.locator('#btn-add-experiment').click();await page.locator('[data-exp-field="name"]').fill('Synthetic portfolio test');
+  await page.locator('[data-exp-field="targetKpi"]').fill('10');await page.locator('[data-exp-field="result"]').fill('8');
+  await page.locator('[data-decision="iterate"]').click();assert.match(await page.locator('.decision-pill').innerText(),/iterate/i);pass('experiment notebook and nine metric definitions');
+  let pending=page.waitForEvent('download');await page.locator('#btn-export-json').click();let download=await pending;
+  const exported=JSON.parse(fs.readFileSync(await download.path(),'utf8'));assert.equal(exported.state.experiments.length,1);
+  await page.locator('#btn-reset').click();
+  await page.locator('#file-import').setInputFiles({name:'synthetic.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});await page.waitForTimeout(300);
+  assert.equal(await page.locator('#tab-experiments').evaluate(el=>el.classList.contains('active')),true);assert.equal(await page.locator('[data-exp-field="name"]').inputValue(),'Synthetic portfolio test');pass('JSON export/import round-trip and tab restoration');
+  pending=page.waitForEvent('download');await page.locator('#btn-export-csv').click();download=await pending;assert.ok(fs.readFileSync(await download.path(),'utf8').startsWith('Section,Metric,Value'));pass('CSV download');
+  const malicious=JSON.parse('{"__proto__":{"polluted":true},"activeTab":"experiments","experiments":[{"id":"\\\"><img src=x onerror=window.portfolioXSS=1>","name":"<img src=x onerror=window.portfolioXSS=1>","sampleSize":"\\\"><img src=x onerror=window.portfolioXSS=1>","result":"<img>","decision":"<img>"}],"scenarios":[{"id":"\\\"><img>","name":"<img src=x onerror=window.portfolioXSS=1>","type":"<img>"}]}');
+  await page.locator('#file-import').setInputFiles({name:'hostile.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(malicious))});await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(()=>window.portfolioXSS),undefined);assert.equal(await page.evaluate(()=>({}).polluted),undefined);assert.equal(await page.locator('#experiments-list img,#scenarios-list img').count(),0);pass('hostile imports cannot create HTML or pollute prototypes');
+  const before=await page.locator('[data-exp-field="name"]').inputValue();
+  await page.locator('#file-import').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('[]')});await page.waitForTimeout(100);assert.equal(await page.locator('[data-exp-field="name"]').inputValue(),before);pass('invalid import leaves current state intact');
+  await page.evaluate(()=>localStorage.clear());await page.reload();await page.waitForTimeout(450);
+  await page.keyboard.press('Escape');await page.mouse.move(1430,990);
+  if(process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({path:path.join(root,'docs/planner-desktop.png'),fullPage:false});
+  await page.locator('[data-tab="solver"]').click();await page.keyboard.press('Escape');await page.mouse.move(1430,990);await page.waitForTimeout(450);if(process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({path:path.join(root,'docs/solver-desktop.png')});
+  for(const width of [390,720,980]) {
+    await page.setViewportSize({width,height:844});await page.locator('[data-tab="experiments"]').click();await page.locator('[data-tab="solver"]').click();await page.locator('[data-tab="planner"]').click();
+    const size=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));
+    console.log('LAYOUT',width,size);assert.ok(size.scroll<=size.width+1,'Page horizontal overflow at '+width);
+    if(width===390){await page.locator('#card-revenue').scrollIntoViewIfNeeded();await page.keyboard.press('Escape');await page.mouse.move(380,830);await page.waitForTimeout(450);if(process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({path:path.join(root,'docs/planner-mobile.png'),fullPage:false});}
+  }
+  pass('responsive navigation and no page overflow at 390, 720 and 980 pixels');
+  assert.deepEqual(errors,[]);assert.ok(requests.every(url=>url.startsWith(base)));pass('no browser errors or external runtime requests');
+  assert.equal((await page.request.get(base+'/.git/config')).status(),404);pass('development server excludes hidden and unrelated files');
+  console.log(checks.length + ' browser checks passed.');
+ } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
+})().catch(e=>{console.error(e);process.exitCode=1;});
